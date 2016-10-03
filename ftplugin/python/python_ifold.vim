@@ -6,23 +6,32 @@
 " Version:	2.9.b
 " Bugfixes: Jean-Pierre Chauvel
 
+" TODO: Fold imports.
+" TODO: Fold docstrings.
+" TODO: Show docstring in foldtext.
+" TODO: Make folding imports, docstrings, signatures optional.
+
 
 if exists("b:did_ftplugin")
     finish
 endif
-let b:did_ftplugin = 1 
+let b:did_ftplugin = 1
 
 if !exists("g:ifold_mode")
     let g:ifold_mode = 1
 endif
 
-map <buffer> f :call ToggleFold()<CR> 
+" map <buffer> f :call ToggleFold()<CR>
 
 let w:nestinglevel = 0
 let w:signature = 0
+let w:import = 0
+let w:toplevel = 0
+let w:docstring = 0
+let w:end_docstring = 0
 let w:is_folded = 1
 
-function! PythonFoldText()
+function! PythonFoldText()  " {{{
     let line = getline(v:foldstart)
     let nnum = nextnonblank(v:foldstart + 1)
     let nextline = getline(nnum)
@@ -46,125 +55,76 @@ function! PythonFoldText()
         let size = " " . size
     endif
         return size . " lines: " . line
-endfunction
+endfunction  " }}}
 
-function! GetPythonFold(lnum)
+
+function! GetPythonFoldExperimental(lnum)  " {{{
+    " Determine folding level in Python source
+
     let line = getline(a:lnum - 1)
+
+    " Handle fold markers
+    if line =~ '{{{'
+        return "a1"
+    elseif line =~ '}}}'
+        return "s1"
+    endif
+
+    " Fold module/package-level docstrings.
+    let this_line = getline(a:lnum)
+    if this_line =~ '^"""' || this_line =~ "^'''"
+        let w:docstring = 1
+    endif
+    if w:docstring == 1
+        if this_line =~ '"""$' || this_line =~ "'''$"
+            let w:docstring = 0
+            let w:end_docstring = 1
+        endif
+        return 1
+    endif
+    if w:end_docstring == 1
+        let w:end_docstring = 0
+        return 0
+    endif
+
+    " Fold top-level import statements.
+    let this_line = getline(a:lnum)
+    if this_line =~ '^\(import\|from\)\s'
+        let w:import = 1
+        return 1
+    endif
+    if w:import == 1
+        if indent(a:lnum) > 0
+            return 1
+        else
+            let w:import = 0
+            return 0
+        endif
+    endif
+
+    " Fold top-level statement blocks.
+    let this_line = getline(a:lnum)
+    if this_line =~ '^\S' && this_line !~ '^\(class\|def\)\s'
+        let w:toplevel = 1
+        return 1
+    endif
+    if w:toplevel == 1
+        if indent(a:lnum) > 0
+            return 1
+        else
+            let w:toplevel = 0
+            return 0
+        endif
+    endif
 
     " Classes and functions get their own folds
     if line =~ '^\s*\(class\|def\)\s'
-    " Verify if the next line is a class or function definition
-    " as well
-        let imm_nnum = a:lnum + 1
-        let nnum = nextnonblank(imm_nnum)
-        if nnum - imm_nnum < 2
-            let nind = indent(nnum)
-            let pind = indent(a:lnum - 1)
-            if pind >= nind
-                let nline = getline(nnum)
-                let w:nestinglevel = nind
-                return "<" . ((w:nestinglevel + &sw) / &sw)
-            endif
-        endif
-        let w:nestinglevel = indent(a:lnum - 1)
-        return ">" . ((w:nestinglevel + &sw) / &sw)
-    endif
-
-    " If next line has less or equal indentation than the first one,
-    " we end a fold.
-    let nind = indent(nextnonblank(a:lnum + 1))
-    if nind <= w:nestinglevel
-        let w:nestinglevel = nind
-        return "<" . ((w:nestinglevel + &sw) / &sw)
-    else
-        let ind = indent(a:lnum)
-        if ind == (w:nestinglevel + &sw)
-            if nind < ind
-                let w:nestinglevel = nind
-                return "<" . ((w:nestinglevel + &sw) / &sw)
-            endif
-        endif
-    endif
-
-    " If none of the above apply, keep the indentation
-    return "="
-endfunction
-
-function! GetPythonFoldBest(lnum)
-    " Determine folding level in Python source
-    "
-    let line = getline(a:lnum - 1)
-
-    " Handle Support markers
-    if line =~ '{{{'
-        return "a1"
-    elseif line =~ '}}}'
-        return "s1"
-    endif
-
-    " Classes and functions get their own folds
-      if line =~ '^\s*\(class\|def\)\s'
-    " Verify if the next line is a class or function definition
-    " as well
-        let imm_nnum = a:lnum + 1
-        let nnum = nextnonblank(imm_nnum)
+        " Verify if the next line is a class or function definition as well
+        let nnum = nextnonblank(a:lnum + 1)
         let nind = indent(nnum)
         let pind = indent(a:lnum - 1)
         if pind >= nind
-            let nline = getline(nnum)
-            let w:nestinglevel = nind
-            return "<" . ((w:nestinglevel + &sw) / &sw)
-        endif
-        let w:nestinglevel = indent(a:lnum - 1)
-        return ">" . ((w:nestinglevel + &sw) / &sw)
-    endif
-
-    " If next line has less or equal indentation than the first one,
-    " we end a fold.
-    let nnonblank = nextnonblank(a:lnum + 1)
-    let nextline = getline(nnonblank) 
-    if (nextline !~ '^#\+.*')
-        let nind = indent(nnonblank)
-        if nind <= w:nestinglevel
-            let w:nestinglevel = nind
-            return "<" . ((w:nestinglevel + &sw) / &sw)
-        else
-            let ind = indent(a:lnum)
-            if ind == (w:nestinglevel + &sw)
-                if nind < ind
-                    let w:nestinglevel = nind
-                    return "<" . ((w:nestinglevel + &sw) / &sw)
-                endif
-            endif
-        endif
-    endif
-
-    " If none of the above apply, keep the indentation
-    return "="
-endfunction
-
-function! GetPythonFoldExperimental(lnum)
-    " Determine folding level in Python source
-    "
-    let line = getline(a:lnum - 1)
-
-    " Handle suport markers
-    if line =~ '{{{'
-        return "a1"
-    elseif line =~ '}}}'
-        return "s1"
-    endif
-
-    " Classes and functions get their own folds
-      if line =~ '^\s*\(class\|def\)\s'
-    " Verify if the next line is a class or function definition
-    " as well
-        let imm_nnum = a:lnum + 1
-        let nnum = nextnonblank(imm_nnum)
-        let nind = indent(nnum)
-        let pind = indent(a:lnum - 1)
-        if pind >= nind
-            let nline = getline(nnum)
+            " let nline = getline(nnum)
             let w:nestinglevel = nind
             return "<" . ((w:nestinglevel + &sw) / &sw)
         endif
@@ -172,7 +132,7 @@ function! GetPythonFoldExperimental(lnum)
         let w:nestinglevel = indent(a:lnum - 1)
     endif
 
-    if line =~ '^.*:' && w:signature
+    if line =~ '^.*:$' && w:signature
         let w:signature = 0
         return ">" . ((w:nestinglevel + &sw) / &sw)
     endif
@@ -180,7 +140,7 @@ function! GetPythonFoldExperimental(lnum)
     " If next line has less or equal indentation than the first one,
     " we end a fold.
     let nnonblank = nextnonblank(a:lnum + 1)
-    let nextline = getline(nnonblank) 
+    let nextline = getline(nnonblank)
     if (nextline !~ '^#\+.*')
         let nind = indent(nnonblank)
         if nind <= w:nestinglevel
@@ -199,9 +159,10 @@ function! GetPythonFoldExperimental(lnum)
 
     " If none of the above apply, keep the indentation
     return "="
-endfunction
+endfunction  " }}}
 
-function! ToggleFold()
+
+function! ToggleFold()  " {{{
     let w:nestinglevel = 0
     let w:signature = 0
     if w:is_folded
@@ -213,31 +174,22 @@ function! ToggleFold()
         exec 'norm! zO'
         let w:is_folded = 1
     endif
-endfunction
+endfunction  "}}}
+
 
 " In case folding breaks down
-function! ReFold()
+function! ReFold()  " {{{
     set foldmethod=expr
     set foldexpr=0
     set foldmethod=expr
-    if g:ifold_mode == 0
-        set foldexpr=GetPythonFold(v:lnum)
-    else
-        if g:ifold_mode == 1
-            set foldexpr=GetPythonFoldBest(v:lnum)
-        else
-            if g:ifold_mode == 2
-                set foldexpr=GetPythonFoldExperimental(v:lnum)
-            endif
-        endif
-    endif
-
-    if g:ifold_mode
-        set foldtext=PythonFoldText()
-    else
-        set foldtext='Folded\ code'
-    endif
+    set foldexpr=GetPythonFoldExperimental(v:lnum)
+    " if g:ifold_mode
+    "     set foldtext=PythonFoldText()
+    " else
+    "     set foldtext='Folded\ code'
+    " endif
     echo
-endfunction
+endfunction  " }}}
+
 
 call ReFold()
