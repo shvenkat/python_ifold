@@ -10,6 +10,10 @@
 " TODO: Fold docstrings.
 " TODO: Show docstring in foldtext.
 " TODO: Make folding imports, docstrings, signatures optional.
+" FIXME:
+"     def __init__(self, size: int, manager: multiproc.SyncManager) -> None:  # type: ignore
+"         if size < 1:
+"             ...
 
 
 if exists("b:did_ftplugin")
@@ -20,8 +24,6 @@ let b:did_ftplugin = 1
 if !exists("g:ifold_mode")
     let g:ifold_mode = 1
 endif
-
-" map <buffer> f :call ToggleFold()<CR>
 
 let w:nestinglevel = 0
 let w:signature = 0
